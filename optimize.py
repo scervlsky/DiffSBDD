@@ -201,9 +201,10 @@ if __name__ == "__main__":
 
     # Population initialization
     buffer = buffer._append({'generation': 0,
-                            'score': objective_function(ref_mol),
-                            'fate': 'initial', 'mol': ref_mol,
-                            'smiles': Chem.MolToSmiles(ref_mol)}, ignore_index=True)
+                             'score': objective_function(ref_mol),
+                             'fate': 'initial',
+                             'mol': ref_mol,
+                             'smiles': Chem.MolToSmiles(ref_mol)}, ignore_index=True)
 
     for generation_idx in range(evolution_steps):
 
@@ -215,8 +216,9 @@ if __name__ == "__main__":
             top_k_molecules = previous_gen.nlargest(top_k, 'score')['mol'].tolist()
             molecules = top_k_molecules * (population_size // top_k)
 
-            # Update the fate of selected top k molecules in the buffer
-            buffer.loc[buffer['generation'] == generation_idx, 'fate'] = 'survived'
+            # Update the fate of molecules
+            buffer.loc[(buffer['generation'] == generation_idx) &
+                       ~buffer['mol'].isin(top_k_molecules), 'fate'] = 'purged'
 
             # Ensure the right number of molecules
             if len(molecules) < population_size:
@@ -227,8 +229,8 @@ if __name__ == "__main__":
         assert len(molecules) == population_size, f"Wrong number of molecules: {len(molecules)} when it should be {population_size}"
         print(f"Generation {generation_idx}, mean score: {np.mean([objective_function(mol) for mol in molecules])}")
         new_molecules = []
-        for i in range(population_size // batch_size
-                       + int(population_size % batch_size > 0)):
+        for i in range(population_size // batch_size +
+                       int(population_size % batch_size > 0)):
             molecules_batch = molecules[i * batch_size : (i + 1) * batch_size]
             pocket = model.prepare_pocket(residues, repeats=len(molecules_batch))
             new_molecules_batch = diversify_ligands(model,
@@ -245,7 +247,7 @@ if __name__ == "__main__":
         for mol in molecules:
             buffer = buffer._append({'generation': generation_idx + 1,
             'score': objective_function(mol),
-            'fate': 'purged',
+            'fate': 'survived',
             'mol': mol,
             'smiles': Chem.MolToSmiles(mol)}, ignore_index=True)
 
