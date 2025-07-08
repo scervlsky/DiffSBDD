@@ -160,6 +160,7 @@ if __name__ == "__main__":
     parser.add_argument('--top_k', type=int, default=7)
     parser.add_argument('--outfile', type=Path, default='output.sdf')
     parser.add_argument('--relax', action='store_true')
+    parser.add_argument('--batch_size', type=int, default=None)
 
 
     args = parser.parse_args()
@@ -168,6 +169,7 @@ if __name__ == "__main__":
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     population_size = args.population_size
+    batch_size = args.batch_size if args.batch_size else population_size
     evolution_steps = args.evolution_steps
     top_k = args.top_k
 
@@ -181,7 +183,6 @@ if __name__ == "__main__":
     pdb_model = PDBParser(QUIET=True).get_structure('', args.pdbfile)[0]
     # Define pocket based on reference ligand
     residues = utils.get_pocket_from_ligand(pdb_model, args.ref_ligand)
-    pocket = model.prepare_pocket(residues, repeats=population_size)
 
 
     if args.objective == 'qed':
@@ -225,12 +226,19 @@ if __name__ == "__main__":
         # Diversify molecules
         assert len(molecules) == population_size, f"Wrong number of molecules: {len(molecules)} when it should be {population_size}"
         print(f"Generation {generation_idx}, mean score: {np.mean([objective_function(mol) for mol in molecules])}")
-        molecules = diversify_ligands(model,
-                                    pocket,
-                                    molecules,
-                                timesteps=args.timesteps,
-                                sanitize=True,
-                                relax_iter=(200 if args.relax else 0))
+        new_molecules = []
+        for i in range(population_size // batch_size
+                       + int(population_size % batch_size > 0)):
+            molecules_batch = molecules[i * batch_size : (i + 1) * batch_size]
+            pocket = model.prepare_pocket(residues, repeats=len(molecules_batch))
+            new_molecules_batch = diversify_ligands(model,
+                                                    pocket,
+                                                    molecules_batch,
+                                                    timesteps=args.timesteps,
+                                                    sanitize=True,
+                                                    relax_iter=(200 if args.relax else 0))
+            new_molecules.extend(new_molecules_batch)
+        molecules = new_molecules
         
         
         # Evaluate and save molecules
