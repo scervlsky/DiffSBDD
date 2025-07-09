@@ -161,6 +161,7 @@ if __name__ == "__main__":
     parser.add_argument('--outfile', type=Path, default='output.sdf')
     parser.add_argument('--relax', action='store_true')
     parser.add_argument('--batch_size', type=int, default=None)
+    parser.add_argument('--all_frags', action='store_true')
 
 
     args = parser.parse_args()
@@ -238,9 +239,15 @@ if __name__ == "__main__":
                                                     molecules_batch,
                                                     timesteps=args.timesteps,
                                                     sanitize=True,
+                                                    largest_frag=not args.all_frags,
                                                     relax_iter=(200 if args.relax else 0))
             new_molecules.extend(new_molecules_batch)
         molecules = top_k_molecules + new_molecules
+
+        # In case some molecules could not be sanitized
+        if len(molecules) < population_size:
+                molecules += [random.choice(molecules) for _ in range(population_size - len(molecules))]
+
         assert len(molecules) == population_size, f"Wrong number of molecules: {len(molecules)} when it should be {population_size}"
         
         
