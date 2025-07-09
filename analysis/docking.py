@@ -130,6 +130,17 @@ def calculate_qvina2_score(receptor_file, sdf_file, out_dir, size=20,
         return scores
 
 
+def calculate_gnina(rdmol, rec_file, gnina='gnina'):
+    with tempfile.NamedTemporaryFile(suffix='.sdf') as tmp:
+        lig_file = tmp.name
+        utils.write_sdf_file(lig_file, [rdmol])
+        result = os.popen(f'gnina -r {rec_file} -l {lig_file} --autobox_ligand {lig_file} --minimize', 'r').read().splitlines()
+        for line in result:
+            if line.startswith('Affinity'):
+                score = float(line.split()[1])
+    return score
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('QuickVina evaluation')
     parser.add_argument('--pdbqt_dir', type=Path,
