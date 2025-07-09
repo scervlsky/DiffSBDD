@@ -17,6 +17,7 @@ from lightning_modules import LigandPocketDDPM
 from constants import FLOAT_TYPE, INT_TYPE
 from analysis.molecule_builder import build_molecule, process_molecule
 from analysis.metrics import MoleculeProperties
+import analysis.scoring
 
 
 def prepare_from_sdf_files(sdf_files, atom_encoder):
@@ -153,7 +154,7 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint', type=Path, default='checkpoints/crossdocked_fullatom_cond.ckpt')
     parser.add_argument('--pdbfile', type=str, default='example/5ndu.pdb')
     parser.add_argument('--ref_ligand', type=str, default='example/5ndu_linked_mols.sdf')
-    parser.add_argument('--objective', type=str, default='sa', choices={'qed', 'sa'})
+    parser.add_argument('--objective', type=str)
     parser.add_argument('--timesteps', type=int, default=100)
     parser.add_argument('--population_size', type=int, default=100)
     parser.add_argument('--evolution_steps', type=int, default=10)
@@ -185,15 +186,9 @@ if __name__ == "__main__":
     # Define pocket based on reference ligand
     residues = utils.get_pocket_from_ligand(pdb_model, args.ref_ligand)
 
-
-    if args.objective == 'qed':
-        objective_function = MoleculeProperties().calculate_qed
-    elif args.objective == 'sa':
-        objective_function = MoleculeProperties().calculate_sa
-    else:
-        ### IMPLEMENT YOUR OWN OBJECTIVE
-        ### FUNCTIONS HERE 
-        raise ValueError(f"Objective function {args.objective} not recognized.")
+    objective_function = analysis.scoring.function.get(args.objective)
+    if not objective_function:
+        raise ValueError(f'Objective function {args.objective} not recognized')
 
     ref_mol = Chem.SDMolSupplier(args.ref_ligand)[0]
 
@@ -202,7 +197,7 @@ if __name__ == "__main__":
 
     # Population initialization
     buffer = buffer._append({'generation': 0,
-                             'score': objective_function(ref_mol),
+                             'score': objective_function(ref_mol, **vars(args)),
                              'fate': 'initial',
                              'mol': ref_mol,
                              'smiles': Chem.MolToSmiles(ref_mol)}, ignore_index=True)
@@ -228,7 +223,7 @@ if __name__ == "__main__":
 
 
         # Diversify molecules
-        print(f"Generation {generation_idx}, mean score: {np.mean([objective_function(mol) for mol in molecules])}")
+        print(f"Generation {generation_idx}, mean score: {np.mean([objective_function(mol, **vars(args)) for mol in molecules])}")
         new_molecules = []
         for i in range((population_size - top_k) // batch_size +
                        int((population_size - top_k) % batch_size > 0)):
@@ -254,7 +249,7 @@ if __name__ == "__main__":
         # Evaluate and save molecules
         for mol in molecules:
             buffer = buffer._append({'generation': generation_idx + 1,
-            'score': objective_function(mol),
+            'score': objective_function(mol, **vars(args)),
             'fate': 'survived',
             'mol': mol,
             'smiles': Chem.MolToSmiles(mol)}, ignore_index=True)
