@@ -197,7 +197,7 @@ if __name__ == "__main__":
     ref_mol = Chem.SDMolSupplier(args.ref_ligand)[0]
 
     # Store molecules in history dataframe 
-    buffer = pd.DataFrame(columns=['generation', 'score', 'fate' 'mol', 'smiles'])
+    buffer = pd.DataFrame(columns=['generation', 'score', 'fate', 'mol', 'smiles'])
 
     # Population initialization
     buffer = buffer._append({'generation': 0,
@@ -209,28 +209,28 @@ if __name__ == "__main__":
     for generation_idx in range(evolution_steps):
 
         if generation_idx == 0:
-            molecules = buffer['mol'].tolist() * population_size
+            molecules = buffer['mol'].tolist() * (population_size - top_k)
+            top_k_molecules = buffer['mol'].tolist() * top_k
         else:
             # Select top k molecules from previous generation
             previous_gen = buffer[buffer['generation'] == generation_idx]
             top_k_molecules = previous_gen.nlargest(top_k, 'score')['mol'].tolist()
-            molecules = top_k_molecules * (population_size // top_k)
+            molecules = top_k_molecules * (population_size // top_k - 1)
 
             # Update the fate of molecules
             buffer.loc[(buffer['generation'] == generation_idx) &
                        ~buffer['mol'].isin(top_k_molecules), 'fate'] = 'purged'
 
             # Ensure the right number of molecules
-            if len(molecules) < population_size:
-                molecules += [random.choice(molecules) for _ in range(population_size - len(molecules))]
+            if len(molecules) < population_size - top_k:
+                molecules += [random.choice(molecules) for _ in range(population_size - top_k - len(molecules))]
 
 
         # Diversify molecules
-        assert len(molecules) == population_size, f"Wrong number of molecules: {len(molecules)} when it should be {population_size}"
         print(f"Generation {generation_idx}, mean score: {np.mean([objective_function(mol) for mol in molecules])}")
         new_molecules = []
-        for i in range(population_size // batch_size +
-                       int(population_size % batch_size > 0)):
+        for i in range((population_size - top_k) // batch_size +
+                       int((population_size - top_k) % batch_size > 0)):
             molecules_batch = molecules[i * batch_size : (i + 1) * batch_size]
             pocket = model.prepare_pocket(residues, repeats=len(molecules_batch))
             new_molecules_batch = diversify_ligands(model,
@@ -240,7 +240,8 @@ if __name__ == "__main__":
                                                     sanitize=True,
                                                     relax_iter=(200 if args.relax else 0))
             new_molecules.extend(new_molecules_batch)
-        molecules = new_molecules
+        molecules = top_k_molecules + new_molecules
+        assert len(molecules) == population_size, f"Wrong number of molecules: {len(molecules)} when it should be {population_size}"
         
         
         # Evaluate and save molecules
